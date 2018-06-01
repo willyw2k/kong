@@ -87,4 +87,9 @@ typedefs.uuid = Schema.define {
   auto = true,
 }
 
+typedefs.tags = Schema.define {
+  type = "string",
+  match = "^[%a%d%-_]+$"
+}
+
 return typedefs

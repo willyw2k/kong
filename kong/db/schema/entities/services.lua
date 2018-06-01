@@ -24,6 +24,7 @@ return {
     { name            = { type = "string", unique = true,
                           custom_validator = validate_name }, },
     { retries         = { type = "integer", default = 5, between = { 0, 32767 } }, },
+    { tags            = { type = "set", elements = typedefs.tags }, },
     -- { tags          = { type = "array", array = { type = "string" } }, },
     { protocol        = typedefs.protocol { required = true, default = "http" } },
     { host            = typedefs.host { required = true } },
