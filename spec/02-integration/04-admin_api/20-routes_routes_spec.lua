@@ -230,13 +230,34 @@ for _, strategy in helpers.each_strategy() do
             assert.same({ data = {}, next = cjson.null }, json)
           end)
 
+          it("handles invalid size", function()
+            local res  = client:get("/routes", { query = { size = "x" } })
+            local body = assert.res_status(400, res)
+            assert.same({
+              code    = Errors.codes.INVALID_SIZE,
+              name    = "invalid size",
+              message = "size must be a number"
+            }, cjson.decode(body))
+
+            res  = client:get("/routes", { query = { size = "potato" } })
+            body = assert.res_status(400, res)
+
+            local json = cjson.decode(body)
+            json.message = nil
+
+            assert.same({
+              code    = Errors.codes.INVALID_SIZE,
+              name    = "invalid size",
+            }, json)
+          end)
+
           it("handles invalid offsets", function()
             local res  = client:get("/routes", { query = { offset = "x" } })
             local body = assert.res_status(400, res)
             assert.same({
               code    = Errors.codes.INVALID_OFFSET,
               name    = "invalid offset",
-              message = "'x' is not a valid offset for this strategy: bad base64 encoding"
+              message = "'x' is not a valid offset: bad base64 encoding"
             }, cjson.decode(body))
 
             res  = client:get("/routes", { query = { offset = "potato" } })
