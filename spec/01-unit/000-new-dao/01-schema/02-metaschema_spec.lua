@@ -286,6 +286,160 @@ describe("metaschema", function()
     assert.match("'set' cannot have attribute 'unique'", err.set)
   end)
 
+  describe("subschemas", function()
+
+    it("supports declaring subschemas", function()
+      local s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+        },
+        primary_key = { "str" },
+      }
+      assert.truthy(MetaSchema:validate(s))
+    end)
+
+    it("subschema_module must have exactly one '?'", function()
+      local s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo",
+        fields = {
+          { str = { type = "string", unique = true } },
+        },
+        primary_key = { "str" },
+      }
+
+      -- no '?'
+      local ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.match("invalid value", err.subschema_module)
+
+      -- one '?'
+      s.subschema_module = "?foofoo"
+      ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+      s.subschema_module = "foo?foo"
+      ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+      s.subschema_module = "foofoo?"
+      ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+
+      -- two '?'
+      s.subschema_module = "?foo?"
+      ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.match("invalid value", err.subschema_module)
+      s.subschema_module = "foo??"
+      ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.match("invalid value", err.subschema_module)
+    end)
+
+    it("subschema_key must be an existing field name", function()
+      local s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+        },
+        primary_key = { "str" },
+      }
+
+      local ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+
+      local err
+      s.subschema_key = "foo"
+      ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.match("value must be a field name", err.subschema_key)
+    end)
+
+    it("subschema_key must be a string field", function()
+      local s = {
+        name = "test",
+        subschema_key = "num",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+          { num = { type = "number", unique = true } },
+        },
+        primary_key = { "str" },
+      }
+      local ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.match("must be a string", err.subschema_key)
+    end)
+
+    it("schema can define abstract fields", function()
+      local s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+          { num = { type = "number", abstract = true } },
+        },
+        primary_key = { "str" },
+      }
+
+      local ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+    end)
+
+    it("abstract composite types can be abstract within their limitations", function()
+      local s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+          -- abstract arrays, sets and maps need their types
+          -- so that strategies (postgres in particular)
+          -- can build the proper types
+          { arr = { type = "array", abstract = true } },
+          { set = { type = "set", abstract = true } },
+          { map = { type = "map", abstract = true } },
+          -- abstract records don't need their fields
+          -- to be declared because strategies store them as JSON
+          -- (we need this property for the `config` field of Plugins)
+          { rec = { type = "record", abstract = true } },
+        },
+        primary_key = { "str" },
+      }
+
+      local ok, err = MetaSchema:validate(s)
+      assert.falsy(ok)
+      assert.same({
+        arr = "field of type 'array' must declare 'elements'",
+        set = "field of type 'set' must declare 'elements'",
+        map = "field of type 'map' must declare 'values'",
+      }, err)
+
+      s = {
+        name = "test",
+        subschema_key = "str",
+        subschema_module = "foo.?",
+        fields = {
+          { str = { type = "string", unique = true } },
+          { arr = { type = "array", elements = { type = "string" }, abstract = true } },
+          { set = { type = "set", elements = { type = "string" }, abstract = true } },
+          { rec = { type = "record", abstract = true } },
+        },
+        primary_key = { "str" },
+      }
+
+      ok = MetaSchema:validate(s)
+      assert.truthy(ok)
+    end)
+
+  end)
+
   it("validates the routes schema", function()
     local Routes = require("kong.db.schema.entities.routes")
     assert.truthy(MetaSchema:validate(Routes))

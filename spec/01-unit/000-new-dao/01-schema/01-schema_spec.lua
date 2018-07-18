@@ -880,6 +880,337 @@ describe("schema", function()
       assert.falsy(errmsg)
     end)
 
+    describe("subschemas", function()
+      it("validates loading a subschema", function()
+        package.loaded["test.subschema.my_subschema"] = {
+          fields = {
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "string" } },
+                  { bar = { type = "integer" } },
+                }
+            } }
+          }
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { config = { type = "record", abstract = true, } },
+          }
+        })
+        assert.truthy(Test:validate({
+          name = "my_subschema",
+          config = {
+            foo = "hello",
+            bar = 123,
+          }
+        }))
+      end)
+
+      it("fails if subschema doesn't exist", function()
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+          }
+        })
+        local ok, errors = Test:validate({
+          name = "my_invalid_subschema",
+        })
+        assert.falsy(ok)
+        assert.same({
+          ["@entity"] = {
+            "module not found for entity: test.subschema.my_invalid_subschema",
+          }
+        }, errors)
+      end)
+
+      it("ignores missing non-required abstract fields", function()
+        package.loaded["test.subschema.my_subschema"] = {
+          fields = {
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "string" } },
+                  { bar = { type = "integer" } },
+                }
+            } }
+          }
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { config = { type = "record", abstract = true, } },
+            { bla = { type = "integer", abstract = true, } },
+          }
+        })
+        assert.truthy(Test:validate({
+          name = "my_subschema",
+          config = {
+            foo = "hello",
+            bar = 123,
+          }
+        }))
+      end)
+
+      it("cannot introduce new top-level fields", function()
+        package.loaded["test.subschema.my_subschema"] = {
+          fields = {
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "integer" } },
+                  { bar = { type = "integer" } },
+                }
+            } },
+            { new_field = { type = "string", required = true, } },
+          }
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "integer" } },
+                }
+            } },
+          }
+        })
+        local ok, errors = Test:validate({
+          name = "my_subschema",
+          config = {
+            foo = 123,
+          },
+          new_field = "blah",
+        })
+        assert.falsy(ok)
+        assert.same({
+          new_field = "unknown field",
+        }, errors)
+      end)
+
+      it("fails when trying to use an abstract field (incomplete subschema)", function()
+        package.loaded["test.subschema.my_subschema"] = {
+          fields = {
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "string" } },
+                  { bar = { type = "integer" } },
+                }
+            } }
+          }
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { config = { type = "record", abstract = true, } },
+            { bla = { type = "integer", abstract = true, } },
+          }
+        })
+        local ok, errors = Test:validate({
+          name = "my_subschema",
+          config = {
+            foo = "hello",
+            bar = 123,
+          },
+          bla = 456,
+        })
+        assert.falsy(ok)
+        assert.same({
+          bla = "error in schema definition: abstract field was not specialized",
+        }, errors)
+      end)
+
+      it("validates using both schema and subschema", function()
+        package.loaded["test.subschema.my_subschema"] = {
+          fields = {
+            { config = {
+                type = "record",
+                fields = {
+                  { foo = { type = "string" } },
+                  { bar = { type = "integer" } },
+                }
+            } }
+          }
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { bla = { type = "integer", } },
+            { config = { type = "record", abstract = true, } },
+          }
+        })
+        local ok, errors = Test:validate({
+          name = "my_subschema",
+          bla = 4.5,
+          config = {
+            foo = 456,
+            bar = 123,
+          }
+        })
+        assert.falsy(ok)
+        assert.same({
+          bla = "expected an integer",
+          config = {
+            foo = "expected a string",
+          }
+        }, errors)
+      end)
+
+      it("can specialize a field of the parent schema", function()
+        package.loaded["test.subschema.length_5"] = {
+          fields = {
+            { consumer = {
+                type = "string",
+                len_eq = 5,
+            } }
+          }
+        }
+        package.loaded["test.subschema.no_restrictions"] = {
+          fields = {}
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { consumer = { type = "string", } },
+          }
+        })
+
+        local ok, errors = Test:validate({
+          name = "length_5",
+          consumer = "aaa",
+        })
+        assert.falsy(ok)
+        assert.same({
+          consumer = "length must be 5",
+        }, errors)
+
+        ok = Test:validate({
+          name = "length_5",
+          consumer = "aaaaa",
+        })
+        assert.truthy(ok)
+
+        ok = Test:validate({
+          name = "no_restrictions",
+          consumer = "aaa",
+        })
+        assert.truthy(ok)
+
+      end)
+
+      it("cannot change type when specializing a field", function()
+        package.loaded["test.subschema.length_5"] = {
+          fields = {
+            { consumer = {
+                type = "integer",
+            } }
+          }
+        }
+        package.loaded["test.subschema.no_restrictions"] = {
+          fields = {}
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { consumer = { type = "string", } },
+          }
+        })
+
+        local ok, errors = Test:validate({
+          name = "length_5",
+          consumer = "aaaaa",
+        })
+        assert.falsy(ok)
+        assert.same({
+          consumer = "error in schema definition: cannot change type in a specialized field",
+        }, errors)
+
+        ok = Test:validate({
+          name = "no_restrictions",
+          consumer = "aaa",
+        })
+        assert.truthy(ok)
+
+      end)
+
+      it("a specialized field can force a value using 'eq'", function()
+        package.loaded["test.subschema.no_consumer"] = {
+          fields = {
+            { consumer = { type = "foreign", reference = "mock_consumers", eq = ngx.null } }
+          }
+        }
+        package.loaded["kong.db.schema.entities.mock_consumers"] = {
+          name = "mock_consumer",
+          primary_key = { "id" },
+          fields = {
+            { id = { type = "string" }, },
+          }
+        }
+        package.loaded["test.subschema.no_restrictions"] = {
+          fields = {}
+        }
+        local Test = Schema.new({
+          name = "test",
+          subschema_key = "name",
+          subschema_module = "test.subschema.?",
+          fields = {
+            { name = { type = "string", required = true, } },
+            { consumer = { type = "foreign", reference = "mock_consumers" } },
+          }
+        })
+
+        local ok, errors = Test:validate({
+          name = "no_consumer",
+          consumer = { id = "hello" },
+        })
+        assert.falsy(ok)
+        assert.same({
+          consumer = "value must be null",
+        }, errors)
+
+        ok = Test:validate({
+          name = "no_consumer",
+          consumer = ngx.null,
+        })
+        assert.truthy(ok)
+
+        ok = Test:validate({
+          name = "no_restrictions",
+          consumer = { id = "hello" },
+        })
+        assert.truthy(ok)
+
+      end)
+
+    end)
+
   end)
 
   describe("validate_primary_key", function()
