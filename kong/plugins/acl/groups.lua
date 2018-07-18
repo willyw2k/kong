@@ -2,6 +2,11 @@ local singletons = require "kong.singletons"
 local pl_tablex = require "pl.tablex"
 
 
+local setmetatable = setmetatable
+local ipairs = ipairs
+local type = type
+
+
 local EMPTY = pl_tablex.readonly {}
 
 
@@ -43,7 +48,7 @@ end
 --   admins = "admins",
 -- }
 -- If there are no groups defined, it will return an empty table
--- @param conumer_id (string) the consumer for which to fetch the groups it belongs to
+-- @param consumer_id (string) the consumer for which to fetch the groups it belongs to
 -- @return table with groups (empty table if none) or nil+error
 local function get_consumer_groups(consumer_id)
   local raw_groups, err = get_consumer_groups_raw(consumer_id)
@@ -65,14 +70,40 @@ local function get_consumer_groups(consumer_id)
 end
 
 
---- checks whether a consumer-group-list is part of a given list of groups.
+--- Returns a table with all group names.
+-- The table will have an array part to iterate over, and a hash part
+-- where each group name is indexed by itself. Eg.
+-- {
+--   [1] = "users",
+--   [2] = "admins",
+--   users = "users",
+--   admins = "admins",
+-- }
+-- If there are no groups defined, it will return an empty table
+-- @param ctx current ngx.ctx passed as an argument
+-- @return table with groups or nil
+local function get_authenticated_groups(ctx)
+  if type(ctx.authenticated_groups) ~= "table" then
+    return nil
+  end
+
+  local groups = {}
+  for i, group in ipairs(groups) do
+    groups[i] = group
+    groups[group] = group
+  end
+
+  return groups
+end
+
+
+--- Checks whether a group-list is part of a given list of groups.
 -- @param groups_to_check (table) an array of group names. Note: since the
 -- results will be cached by this table, always use the same table for the
 -- same set of groups!
--- @param consumer_groups (table) list of consumer groups (result from
--- `get_consumer_groups`)
--- @return (boolean) whether the consumer is part of any of the groups.
-local function consumer_in_groups(groups_to_check, consumer_groups)
+-- @param authenticated_groups (table) list of groups
+-- @return (boolean) whether the authenticated groups is found from the groups.
+local function in_groups(groups_to_check, authenticated_groups)
   -- 1st level cache on "groups_to_check"
   local result1 = consumer_in_groups_cache[groups_to_check]
   if result1 == nil then
@@ -81,7 +112,7 @@ local function consumer_in_groups(groups_to_check, consumer_groups)
   end
 
   -- 2nd level cache on "consumer_groups"
-  local result2 = result1[consumer_groups]
+  local result2 = result1[authenticated_groups]
   if result2 ~= nil then
     return result2
   end
@@ -89,17 +120,17 @@ local function consumer_in_groups(groups_to_check, consumer_groups)
   -- not found, so validate and populate 2nd level cache
   result2 = false
   for i = 1, #groups_to_check do
-    if consumer_groups[groups_to_check[i]] then
+    if authenticated_groups[groups_to_check[i]] then
       result2 = true
       break
     end
   end
-  result1[consumer_groups] = result2
+  result1[authenticated_groups] = result2
   return result2
 end
 
 
---- checks whether a consumer is part of the gieven list of groups
+--- Checks whether a consumer is part of the gieven list of groups
 -- @param groups_to_check (table) an array of group names. Note: since the
 -- results will be cached by this table, always use the same table for the
 -- same set of groups!
@@ -109,24 +140,26 @@ local function consumer_id_in_groups(groups_to_check, consumer_id)
   if not consumer_groups then
     return nil, err
   end
-  return consumer_in_groups(groups_to_check, consumer_groups)
+  return in_groups(groups_to_check, consumer_groups)
 end
 
 
 --- Gets the currently identified consumer for the request.
 -- Checks both consumer and if not found the credentials.
+-- @param ctx current ngx.ctx passed as an argument
 -- @return consumer_id (string), or alternatively `nil` if no consumer was
 -- authenticated.
-local function get_current_consumer_id()
-  local ctx = ngx.ctx
+local function get_current_consumer_id(ctx)
   return (ctx.authenticated_consumer or EMPTY).id or
          (ctx.authenticated_credential or EMPTY).consumer_id
 end
 
 
 return {
+  get_authenticated_groups = get_authenticated_groups,
   get_consumer_groups = get_consumer_groups,
-  consumer_in_groups = consumer_in_groups,
+  in_groups = in_groups,
+  consumer_in_groups = in_groups,
   consumer_id_in_groups = consumer_id_in_groups,
   get_current_consumer_id = get_current_consumer_id,
 }
