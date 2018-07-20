@@ -576,6 +576,68 @@ local function parse_multipart_stream(options, boundary)
 end
 
 
+local function parse_multipart_data(options, boundary)
+  if not boundary then
+    return nil, "unable to parse multipart/form-data without the boundary"
+  end
+
+  req_read_body()
+
+  -- we don't support file i/o in case the body is
+  -- buffered to a file, and that is how we want it.
+  local body_data = get_body_data()
+
+  if not body_data then
+    return nil, "unable to get body data"
+  end
+
+  local parts = {}
+  local count = 0
+  local part_start
+
+  local s, e = find(body_data, boundary, 1, true)
+  while s do
+    if part_start then
+      count = count + 1
+      parts[count] = sub(body_data, part_start, s - 2)
+    end
+
+    if sub(body_data, e + 1, e + 2) == "--" then
+      break
+    end
+
+    part_start = e + 3
+    s, e = find(body_data, boundary, part_start, true)
+  end
+
+  if count == 0 then
+    return {}
+  end
+
+  for i = 1, count do
+    local part = parts[i]
+    local head
+    local body
+    s, e = find(part, "\r\n\r\n", 1, true)
+    if s then
+      head = sub(part, 1, s - 1)
+      body = sub(part, e + 1)
+
+    else
+      if sub(part, -2) == "\r\n" then
+        head = sub(part, 1, -3)
+      else
+        head = part
+      end
+
+      body = ""
+    end
+
+    parts[i] = { head, body }
+  end
+end
+
+
 local function parse_multipart(options, content_type)
   local boundary
 
