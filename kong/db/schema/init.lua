@@ -78,7 +78,8 @@ local validation_errors = {
   NOT_PK                    = "not a primary key",
   MISSING_PK                = "missing primary key",
   -- subschemas
-  SUBSCHEMA_NOT_FOUND       = "module not found for entity: %s",
+  SUBSCHEMA_UNKNOWN         = "unknown type: %s",
+  SUBSCHEMA_BAD_PARENT      = "entities of type '%s' cannot have subschemas",
   SUBSCHEMA_UNDEFINED_FIELD = "error in schema definition: abstract field was not specialized",
   SUBSCHEMA_BAD_TYPE        = "error in schema definition: cannot change type in a specialized field",
 }
@@ -1058,28 +1059,6 @@ function Schema:process_auto_fields(input, context)
 end
 
 
--- @param self the Schema object.
-local function load_subschema(self, input)
-  local patt = self.subschema_module
-  local key = input[self.subschema_key]
-  local mod_name = patt:gsub("%?", key)
-  local pok, definition = pcall(require, mod_name)
-  if not pok then
-    return nil, validation_errors.SUBSCHEMA_NOT_FOUND:format(mod_name)
-  end
-
-  local subschema, err = Schema.new(definition)
-  if not subschema then
-    return nil, err
-  end
-
-  if not self.subschemas then
-    self.subschemas = {}
-  end
-  self.subschemas[key] = subschema
-end
-
-
 --- Validate a table against the schema, ensuring that the entity is complete.
 -- It validates fields for their attributes,
 -- and runs the global entity checks against the entire table.
@@ -1110,12 +1089,19 @@ function Schema:validate(input, full_check)
     full_check = true
   end
 
-  local ok, subschema_error, _
+  local ok, subschema_error
   if self.subschema_key then
-    _, subschema_error = load_subschema(self, input)
+    local key = input[self.subschema_key]
+    if not (self.subschemas and self.subschemas[key]) then
+      subschema_error = validation_errors.SUBSCHEMA_UNKNOWN:format(key)
+    end
   end
 
   local _, field_errors = validate_fields(self, input)
+
+  if subschema_error then
+    field_errors[self.subschema_key] = subschema_error
+  end
 
   for name, field in self:each_field() do
     if field.required
@@ -1132,11 +1118,6 @@ function Schema:validate(input, full_check)
       field_errors["@entity"] = entity_errors
     end
     merge_into_table(field_errors, f_errs)
-  end
-
-  if subschema_error then
-    field_errors["@entity"] = field_errors["@entity"] or {}
-    table.insert(field_errors["@entity"], subschema_error)
   end
 
   if next(field_errors) then
@@ -1335,6 +1316,28 @@ function Schema.new(definition)
   end
 
   return self
+end
+
+
+function Schema.new_subschema(self, key, definition)
+  assert(type(key) == "string", "key must be a string")
+  assert(type(definition) == "table", "definition must be a table")
+
+  if not self.subschema_key then
+    return nil, validation_errors.SUBSCHEMA_BAD_PARENT:format(self.name)
+  end
+
+  local subschema, err = Schema.new(definition)
+  if not subschema then
+    return nil, err
+  end
+
+  if not self.subschemas then
+    self.subschemas = {}
+  end
+  self.subschemas[key] = subschema
+
+  return true
 end
 
 

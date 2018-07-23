@@ -292,7 +292,6 @@ describe("metaschema", function()
       local s = {
         name = "test",
         subschema_key = "str",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
         },
@@ -301,49 +300,10 @@ describe("metaschema", function()
       assert.truthy(MetaSchema:validate(s))
     end)
 
-    it("subschema_module must have exactly one '?'", function()
-      local s = {
-        name = "test",
-        subschema_key = "str",
-        subschema_module = "foo",
-        fields = {
-          { str = { type = "string", unique = true } },
-        },
-        primary_key = { "str" },
-      }
-
-      -- no '?'
-      local ok, err = MetaSchema:validate(s)
-      assert.falsy(ok)
-      assert.match("invalid value", err.subschema_module)
-
-      -- one '?'
-      s.subschema_module = "?foofoo"
-      ok = MetaSchema:validate(s)
-      assert.truthy(ok)
-      s.subschema_module = "foo?foo"
-      ok = MetaSchema:validate(s)
-      assert.truthy(ok)
-      s.subschema_module = "foofoo?"
-      ok = MetaSchema:validate(s)
-      assert.truthy(ok)
-
-      -- two '?'
-      s.subschema_module = "?foo?"
-      ok, err = MetaSchema:validate(s)
-      assert.falsy(ok)
-      assert.match("invalid value", err.subschema_module)
-      s.subschema_module = "foo??"
-      ok, err = MetaSchema:validate(s)
-      assert.falsy(ok)
-      assert.match("invalid value", err.subschema_module)
-    end)
-
     it("subschema_key must be an existing field name", function()
       local s = {
         name = "test",
         subschema_key = "str",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
         },
@@ -364,7 +324,6 @@ describe("metaschema", function()
       local s = {
         name = "test",
         subschema_key = "num",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
           { num = { type = "number", unique = true } },
@@ -380,7 +339,6 @@ describe("metaschema", function()
       local s = {
         name = "test",
         subschema_key = "str",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
           { num = { type = "number", abstract = true } },
@@ -396,7 +354,6 @@ describe("metaschema", function()
       local s = {
         name = "test",
         subschema_key = "str",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
           -- abstract arrays, sets and maps need their types
@@ -424,7 +381,6 @@ describe("metaschema", function()
       s = {
         name = "test",
         subschema_key = "str",
-        subschema_module = "foo.?",
         fields = {
           { str = { type = "string", unique = true } },
           { arr = { type = "array", elements = { type = "string" }, abstract = true } },

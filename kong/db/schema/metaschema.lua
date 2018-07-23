@@ -297,13 +297,6 @@ local MetaSchema = Schema.new({
       },
     },
     {
-      subschema_module = {
-        type = "string",
-        nilable = true,
-        match = "^[^%?]*%?[^%?]*$",
-      },
-    },
-    {
       fields = fields_array,
     },
     {
